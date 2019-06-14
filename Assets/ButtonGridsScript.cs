@@ -66,6 +66,9 @@ public class ButtonGridsScript : MonoBehaviour {
 
     void GenerateModule()
     {
+        stageNum = 0;
+        ministageNum = 0;
+
         colors = colors.Shuffle();
         for (int x = 0; x < 40; x++)
         {
