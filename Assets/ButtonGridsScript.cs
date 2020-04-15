@@ -9,15 +9,18 @@ public class ButtonGridsScript : MonoBehaviour {
     public KMBombModule Module;
     public KMAudio Audio;
     public KMBombInfo Bomb;
+    public KMColorblindMode Colorblind;
     public KMSelectable[] btnSelectables;
     public KMSelectable resetSelectable;
     public MeshRenderer[] btnRenderers, stageRenderers;
     public Material[] btnMaterials, stageMaterials;
+    public TextMesh[] btnColorblind;
 
     private static int _moduleIdCounter = 1;
     private int _moduleId;
     private bool solved = false;
 
+    private bool cbActive = false;
     private int[,] colorSolution = new int[10, 4]; // 0 = red, 1 = blue, 2 = yellow, 3 = green
     private int[] colors = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3 };
     private bool[] pressed = new bool[40];
@@ -33,6 +36,11 @@ public class ButtonGridsScript : MonoBehaviour {
         _moduleId = _moduleIdCounter++;
         Module.OnActivate += Activate;
 
+        if (Colorblind.ColorblindModeActive)
+        {
+            cbActive = true;
+        }
+        DebugMsg("Colorblind Mode: " + cbActive);
         GenerateModule();
     }
 
@@ -45,7 +53,7 @@ public class ButtonGridsScript : MonoBehaviour {
             {
                 if (!solved)
                     BtnPress(j);
-                Audio.PlaySoundAtTransform("ButtonPress", Module.transform);
+                Audio.PlaySoundAtTransform("ButtonPress", btnSelectables[j].transform);
                 btnSelectables[j].AddInteractionPunch();
                 return false;
             };
@@ -58,7 +66,7 @@ public class ButtonGridsScript : MonoBehaviour {
                 DebugMsg("Resetting...");
                 GenerateModule();
             }
-            Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.LightBuzz, Module.transform);
+            Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.LightBuzz, resetSelectable.transform);
             resetSelectable.AddInteractionPunch(10);
             return false;
         };
@@ -72,6 +80,11 @@ public class ButtonGridsScript : MonoBehaviour {
         colors = colors.Shuffle();
         for (int x = 0; x < 40; x++)
         {
+            btnColorblind[x].text = "";
+            if (cbActive)
+            {
+                btnColorblind[x].text = colorNames[colors[x]].Substring(0, 1).ToUpper();
+            }
             btnRenderers[x].material = btnMaterials[colors[x]];
             pressed[x] = false;
         }
@@ -79,7 +92,7 @@ public class ButtonGridsScript : MonoBehaviour {
         for (int i = 0; i < 10; i++)
             stageRenderers[i].material = stageMaterials[0];
 
-        if (Bomb.IsIndicatorOn("BOB") && Bomb.IsPortPresent(Port.DVI) && Bomb.GetBatteryCount() == 1 && Bomb.GetSerialNumberLetters().All(x => x == 'C' || x == 'H' || x == 'R' || x == 'I' || x == 'S'))
+        if (Bomb.IsIndicatorOn("BOB") && Bomb.IsPortPresent(Port.DVI) && Bomb.GetBatteryCount() == 1 && (CheckInSerial("C") || CheckInSerial("H") || CheckInSerial("R") || CheckInSerial("I") || CheckInSerial("S")))
         {
             DebugMsg("The unicorn applies.");
             unicornApplies = true;
@@ -281,12 +294,22 @@ public class ButtonGridsScript : MonoBehaviour {
 
             if (stageNum == 0 && pressedStage[0] == unicorn[0] && pressedStage[1] == unicorn[1] && pressedStage[2] == unicorn[2] && pressedStage[3] == unicorn[3] && unicornApplies)
             {
+                solved = true;
                 Module.HandlePass();
                 DebugMsg("The unicorn rule applied. Solving module...");
+
+                for (int i = 0; i < 10; i++)
+                {
+                    stageRenderers[i].material = stageMaterials[1];
+                }
 
                 for (int i = 0; i < 40; i++)
                 {
                     btnRenderers[i].material = btnMaterials[3];
+                    if (cbActive)
+                    {
+                        btnColorblind[i].text = "G";
+                    }
                 }
             }
             
@@ -307,12 +330,17 @@ public class ButtonGridsScript : MonoBehaviour {
                     DebugMsg("Your submission for Stage " + stageNum + " was correct. Moving on...");
                 else
                 {
+                    solved = true;
                     Module.HandlePass();
                     DebugMsg("Your submission for Stage 10 was correct. Solving module...");
 
                     for (int i = 0; i < 40; i++)
                     {
                         btnRenderers[i].material = btnMaterials[3];
+                        if (cbActive)
+                        {
+                            btnColorblind[i].text = "G";
+                        }
                     }
                 }
             }
@@ -326,13 +354,14 @@ public class ButtonGridsScript : MonoBehaviour {
         Debug.LogFormat("[Button Grids #{0}] {1}", _moduleId, msg);
     }
 
-    public string TwitchHelpMessage = "Use !{0} press 1 2 3 4 or !{0} 1 2 3 4 to press the buttons 1 2 3 4 in reading order. You can press any number of buttons you want! Press all forty of them at once if you want, I don't care. You can do !{0} reset to reset.";
+    public string TwitchHelpMessage = "Use !{0} press 1 2 3 4 or !{0} 1 2 3 4 to press the buttons 1 2 3 4 in reading order. You can press up to all forty buttons at once! You can do !{0} reset to reset. You can also do !{0} colorblind to toggle colorblind mode.";
     IEnumerator ProcessTwitchCommand(string cmd)
     {
+        cmd = cmd.ToLower();
         if (cmd.StartsWith("press "))
         {
             cmd = cmd.Substring(6);
-            DebugMsg(cmd);
+            //DebugMsg(cmd);
         }
 
         else if (cmd == "reset")
@@ -342,23 +371,151 @@ public class ButtonGridsScript : MonoBehaviour {
             yield break;
         }
 
-        string[] numbers = cmd.Split(' ');
+        else if (cmd == "colorblind")
+        {
+            yield return null;
+            if (cbActive)
+            {
+                cbActive = false;
+                for (int i = 0; i < 40; i++)
+                {
+                    btnColorblind[i].text = "";
+                }
+            }
+            else
+            {
+                cbActive = true;
+                for (int i = 0; i < 40; i++)
+                {
+                    btnColorblind[i].text = colorNames[colors[i]].Substring(0, 1).ToUpper();
+                }
+            }
+            yield break;
+        }
 
-        int numbersProcessed = 0;
+        string[] numbers = cmd.Split(' ');
         int result = 0;
+        int numbersProcessed = 0;
 
         foreach (var number in numbers)
         {
-            if (int.TryParse(number, out result))
+            if (!int.TryParse(number, out result))
             {
                 yield return null;
-                yield return new KMSelectable[] { btnSelectables[int.Parse(number) - 1] };
-                numbersProcessed++;
+                yield return "sendtochaterror The " + (numbersProcessed + 1) + "th button in your command is not a number.";
+                yield break;
             }
-
+            else if (result < 1 || result > 40)
+            {
+                yield return null;
+                yield return "sendtochaterror The " + (numbersProcessed + 1) + "th button in your command is not in range 1-40.";
+                yield break;
+            }
             else
             {
-                yield return "sendtochaterror The " + (numbersProcessed + 1) + "th button in your command is not a number.";
+                numbersProcessed++;
+            }
+        }
+
+        yield return null;
+        foreach (var number in numbers)
+        {
+            yield return new KMSelectable[] { btnSelectables[int.Parse(number) - 1] };
+        }
+    }
+
+    IEnumerator TwitchHandleForcedSolve()
+    {
+        if (unicornApplies && stageNum != 0)
+        {
+            resetSelectable.OnInteract();
+            yield return new WaitForSeconds(0.1f);
+        }
+        if (ministageNum != 0 && !unicornApplies)
+        {
+            for (int i = 0; i < ministageNum; i++)
+            {
+                if (colors[btnsPressedThisStage[i]] != colorSolution[stageNum, i])
+                {
+                    resetSelectable.OnInteract();
+                    yield return new WaitForSeconds(0.1f);
+                }
+            }
+        }
+        else if (ministageNum != 0 && unicornApplies)
+        {
+            int[] unicorn = { 1, 0, 1, 2 };
+            for (int i = 0; i < ministageNum; i++)
+            {
+                if (colors[btnsPressedThisStage[i]] != unicorn[i])
+                {
+                    resetSelectable.OnInteract();
+                    yield return new WaitForSeconds(0.1f);
+                }
+            }
+        }
+        if (unicornApplies)
+        {
+            int[] unicorn = { 1, 0, 1, 2 };
+            int start = ministageNum;
+            for (int i = start; i < 4; i++)
+            {
+                for (int j = 0; j < 40; j++)
+                {
+                    if (!pressed[j] && colors[j] == unicorn[i])
+                    {
+                        btnSelectables[j].OnInteract();
+                        yield return new WaitForSeconds(0.1f);
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (ministageNum != 0)
+            {
+                int start = ministageNum;
+                for (int i = start; i < 4; i++)
+                {
+                    for (int j = 0; j < 40; j++)
+                    {
+                        if (!pressed[j] && colors[j] == colorSolution[stageNum, i])
+                        {
+                            btnSelectables[j].OnInteract();
+                            yield return new WaitForSeconds(0.1f);
+                            break;
+                        }
+                    }
+                }
+            }
+            int start2 = stageNum;
+            for (int i = start2; i < 10; i++)
+            {
+                for (int k = 0; k < 4; k++)
+                {
+                    for (int j = 0; j < 40; j++)
+                    {
+                        if (i != 9)
+                        {
+                            if (!pressed[j] && colors[j] == colorSolution[i, k])
+                            {
+                                btnSelectables[j].OnInteract();
+                                yield return new WaitForSeconds(0.1f);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (!pressed[j])
+                            {
+                                btnSelectables[j].OnInteract();
+                                yield return new WaitForSeconds(0.1f);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
